@@ -148,3 +148,40 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 #clearAllBtn:hover {
     opacity: 1;
 }
+
+/* The Footer Text Styling */
+.text-muted.small {
+    color: rgba(255, 255, 255, 0.7) !important; /* This is the "Off-White" look */
+}
+
+/* The Golden Gradient Animation */
+.instagram-link {
+    font-weight: bold;
+    text-decoration: none;
+    
+    /* Create the Gradient */
+    background: linear-gradient(
+        to right, 
+        #bf953f, 
+        #fcf6ba, 
+        #b38728, 
+        #fcf6ba, 
+        #aa771c
+    );
+    background-size: 200% auto;
+    
+    /* Clip the background to the text */
+    background-clip: text;
+    -webkit-background-clip: text;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+    
+    /* The Animation */
+    animation: shine 3s linear infinite;
+}
+
+@keyframes shine {
+    to {
+        background-position: 200% center;
+    }
+}
