@@ -9,6 +9,7 @@ function addParticipant() {
     if (name && !participants.includes(name)) {
         participants.push(name);
         renderTags();
+        saveProgress();
         input.value = ''; 
     }
 }
@@ -27,6 +28,7 @@ function renderTags() {
 function removeTag(index) {
     participants.splice(index, 1);
     renderTags();
+    saveProgress();
 }
 
 // --- 2. FIXED DEADLINE LOGIC ---
@@ -113,16 +115,19 @@ function toggleClearButton() {
     const clearBtn = document.getElementById('clearAllBtn');
     if (!clearBtn) return;
 
-    // Check if there is a saved draft in the browser's memory
+    // Check localStorage (now guaranteed to be null if empty)
     const savedDraft = localStorage.getItem('rkdmc_draft');
     
-    // Also check if the user has currently typed anything or added tags
-    const hasInput = document.getElementById('eventName').value.length > 0 || 
-                     document.getElementById('summary').value.length > 0 ||
-                     participants.length > 0;
+    // Check current live inputs (using .trim() to ignore spaces)
+    const currentEventName = document.getElementById('eventName').value.trim();
+    const currentSummary = document.getElementById('summary').value.trim();
+    
+    const hasLiveInput = currentEventName.length > 0 || 
+                         currentSummary.length > 0 ||
+                         participants.length > 0;
 
-    // Show button if there is a saved draft OR current unsaved input
-    if (savedDraft || hasInput) {
+    // Show button only if there's actual text
+    if (savedDraft || hasLiveInput) {
         clearBtn.style.display = 'block';
     } else {
         clearBtn.style.display = 'none';
@@ -132,21 +137,40 @@ function toggleClearButton() {
 // --- LOCAL "CLOUD" SAVING (Browser Storage) ---
 // Save data every time the user types
 function saveProgress() {
-    const formData = {
-        eventName: document.getElementById('eventName').value,
-        orgBody: document.getElementById('orgBody').value,
-        venue: document.getElementById('venue').value,
-        objective: document.getElementById('objective').value,
-        summary: document.getElementById('summary').value,
-        achievements: document.getElementById('achievements').value,
-        financials: document.getElementById('financials').value,
-        learning: document.getElementById('learning').value,
-        feedback: document.getElementById('feedback').value,
-        participants: participants // our global array
-    };
-    localStorage.setItem('rkdmc_draft', JSON.stringify(formData));
+    const fields = [
+        'eventName', 'orgBody', 'eventDate', 'venue', 'yearCourse', 
+        'objective', 'summary', 'achievements', 'financials', 
+        'learning', 'feedback'
+    ];
 
-    // Check if we should show the Clear All button
+    let formData = {};
+    let hasActualContent = false;
+
+    // 1. Check all text fields
+    fields.forEach(id => {
+        const element = document.getElementById(id);
+        if (element) {
+            const val = element.value.trim(); 
+            if (val !== "") {
+                formData[id] = val;
+                hasActualContent = true;
+            }
+        }
+    });
+
+    // 2. Check the global participants array (CRITICAL FIX)
+    if (typeof participants !== 'undefined' && participants.length > 0) {
+        formData.participants = participants; // Save the actual array
+        hasActualContent = true;
+    }
+
+    // 3. The "Ghost Data" Purge
+    if (hasActualContent) {
+        localStorage.setItem('rkdmc_draft', JSON.stringify(formData));
+    } else {
+        localStorage.removeItem('rkdmc_draft');
+    }
+
     toggleClearButton();
 }
 
@@ -160,7 +184,9 @@ window.onload = function() {
         const data = JSON.parse(savedData);
         document.getElementById('eventName').value = data.eventName || '';
         document.getElementById('orgBody').value = data.orgBody || '';
+        document.getElementById('eventDate').value = data.eventDate || '';
         document.getElementById('venue').value = data.venue || '';
+        document.getElementById('yearCourse').value = data.yearCourse || '';
         document.getElementById('objective').value = data.objective || '';
         document.getElementById('summary').value = data.summary || '';
         document.getElementById('achievements').value = data.achievements || '';
@@ -195,41 +221,50 @@ async function generatePDF() {
     doc.line(20, y + 2, 190, y + 2);
     y += 15;
 
-    // --- NEW SMART HELPER ---
-    // This function draws text line-by-line to allow page breaks mid-paragraph
-    const addSmartSection = (title, value) => {
-        const text = value || "Not specified";
-        
-        // 1. Draw Title
-        if (y + 15 > bottomMargin) { doc.addPage(); y = 20; }
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(13);
-        doc.text(title + ":", 20, y);
-        y += 7;
+// --- NEW SMART HELPER ---
+const addSmartSection = (title, value) => {
+    // 1. Handle the Rupee symbol and empty values
+    let rawText = value || "Not specified";
+    
+    // Safety check: ensure rawText is a string before replacing
+    let text = String(rawText).replace(/₹/g, "Rs."); 
 
-        // 2. Draw Content Line-by-Line
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(12);
-        const lines = doc.splitTextToSize(text, 170);
+    // 2. Draw Title
+    if (y + 15 > bottomMargin) { 
+        doc.addPage(); 
+        y = 20; 
+    }
+    
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(13);
+    doc.text(title + ":", 20, y);
+    y += 7;
 
-        lines.forEach(line => {
-            if (y > bottomMargin) {
-                doc.addPage();
-                y = 20;
-                // Optional: repeat title on next page if you want
-                doc.setFont("helvetica", "italic");
-                doc.setFontSize(10);
-                doc.text(title + " (continued...)", 20, y);
-                y += 10;
-                doc.setFont("helvetica", "normal");
-                doc.setFontSize(12);
-            }
-            doc.text(line, 20, y);
-            y += 7; // Line height
-        });
-        
-        y += 5; // Gap after section
-    };
+    // 3. Draw Content Line-by-Line
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(12);
+    const lines = doc.splitTextToSize(text, 170);
+
+    lines.forEach(line => {
+        if (y > bottomMargin) {
+            doc.addPage();
+            y = 20;
+            
+            // Repeat title context on new page
+            doc.setFont("helvetica", "italic");
+            doc.setFontSize(10);
+            doc.text(title + " (continued...)", 20, y);
+            y += 10;
+            
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(12);
+        }
+        doc.text(line, 20, y);
+        y += 7; // Line height
+    });
+    
+    y += 5; // Gap after section
+};
 
     // --- 1. BASIC DETAILS ---
     doc.setFont("helvetica", "bold");
